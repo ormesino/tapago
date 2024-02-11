@@ -28,21 +28,28 @@ async function connectWhatsApp() {
   // Function to respond to messages
   const sendMessage = async (jid, message, ...args) => {
     try {
-      await socket.sendMessage(jid, message, { ...args });
+      await socket.sendMessage(jid, message, ...args);
     } catch (error) {
       console.error("Error sending message: ", error);
     }
   };
 
+  // Function to handle messages
   const handleReply = async (msg) => {
     const { key, message } = msg;
     const text = message?.conversation;
     const jid = key.remoteJid;
-    const prefix = "/pago";
 
-    if (!text.startsWith(prefix)) return;
-    const reply = "O de hoje ta pago! 💪";
-    await sendMessage(jid, { text: reply }, { quoted: msg });
+    if (text.startsWith("/poll")) {
+      await sendMessage(jid, {
+        poll: {
+          name: `O de hoje do(a) ${msg.pushName} ta pago? 🤔`,
+          values: ["Sim 🔥", "Não 🐔"],
+        },
+      });
+    } else if (text.startsWith("/ping")) {
+      await sendMessage(jid, { text: "Pong! 🏓" }, { quoted: msg });
+    }
   };
 
   // Listen for messages in group
