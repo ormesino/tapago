@@ -25,11 +25,31 @@ async function connectWhatsApp() {
     }
   });
 
-  // Listen for messages
+  // Function to respond to messages
+  const sendMessage = async (jid, message, ...args) => {
+    try {
+      await socket.sendMessage(jid, message, { ...args });
+    } catch (error) {
+      console.error("Error sending message: ", error);
+    }
+  };
+
+  const handleReply = async (msg) => {
+    const { key, message } = msg;
+    const text = message?.conversation;
+    const jid = key.remoteJid;
+    const prefix = "/pago";
+
+    if (!text.startsWith(prefix)) return;
+    const reply = "O de hoje ta pago! 💪";
+    await sendMessage(jid, { text: reply }, { quoted: msg });
+  };
+
+  // Listen for messages in group
   socket.ev.on("messages.upsert", async ({ messages }) => {
-    messages.forEach((message) => {
-      console.log(message);
-    });
+    if (!messages[0].message) return;
+    handleReply(messages[0]);
+    console.log(messages[0]);
   });
 }
 
