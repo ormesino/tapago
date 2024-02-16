@@ -1,5 +1,10 @@
 import { makeWASocket, useMultiFileAuthState } from "@whiskeysockets/baileys";
+import { writeFileSync } from "fs";
 import pino from "pino";
+import process from "process";
+
+// Data storage
+const db = [];
 
 async function connectWhatsApp() {
   const auth = await useMultiFileAuthState("session");
@@ -25,6 +30,32 @@ async function connectWhatsApp() {
     }
   });
 
+  // Register a user to the data storage
+  const registerUser = async (jid, userName, ...args) => {
+    if (db.some((user) => user.jid === jid)) {
+      await sendMessage(jid, { text: "Você já está registrado!" }, ...args);
+      return;
+    }
+    db.push({
+      jid,
+      userName,
+      score: 0,
+    });
+    writeFileSync(process.cwd() + "/data.json", JSON.stringify(db));
+    await sendMessage(jid, { text: "Registrado com sucesso!" }, ...args);
+  };
+
+  // Show scores of all users
+  const showScores = async (jid, ...args) => {
+    const scores = db
+      .map((user) => `${user.userName}: ${user.score}`)
+      .join("\n");
+    
+    const today = new Date();
+    const date = `${today.getDate()}/${today.getMonth() + 1}`;
+    await sendMessage(jid, { text: `Pontuação Atualizada (${date})\n\n${scores}` }, ...args);
+  };
+
   // Function to respond to messages
   const sendMessage = async (jid, message, ...args) => {
     try {
@@ -40,15 +71,28 @@ async function connectWhatsApp() {
     const text = message?.conversation;
     const jid = key.remoteJid;
 
-    if (text.startsWith("/poll")) {
-      await sendMessage(jid, {
-        poll: {
-          name: `O de hoje do(a) ${msg.pushName} ta pago? 🤔`,
-          values: ["Sim 🔥", "Não 🐔"],
-        },
-      });
-    } else if (text.startsWith("/ping")) {
-      await sendMessage(jid, { text: "Pong! 🏓" }, { quoted: msg });
+    const firstWord = text.split(" ")[0];
+    switch (firstWord) {
+      case "$pago":
+        await sendMessage(jid, {
+          poll: {
+            name: `O de hoje do(a) ${msg.pushName} ta pago? 🤔`,
+            values: ["Sim 🔥", "Não 🐔"],
+            selectableCount: 1,
+          },
+        });
+        break;
+      case "$ping":
+        await sendMessage(jid, { text: "Pong! 🏓" }, { quoted: msg });
+        break;
+      case "$join":
+        await registerUser(jid, msg.pushName, { quoted: msg });
+        break;
+      case "$scores":
+        await showScores(jid, { quoted: msg });
+        break;
+      default:
+        break;
     }
   };
 
