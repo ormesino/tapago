@@ -34,7 +34,7 @@ let currentPoll = null;
 
 // Register a user to the data storage
 const registerUser = async (key, userName, ...args) => {
-  if (db.some((user) => user.jid === key.remoteJid)) {
+  if (db.some((user) => user.id === key.participant)) {
     await sendMessage(
       key.remoteJid,
       { text: "Você já está registrado!" },
@@ -69,6 +69,7 @@ const showScores = async (jid, ...args) => {
   );
 };
 
+// Function to get a message from the store
 async function getMessage(key) {
   if (store) {
     const msg = await store.loadMessage(key.remoteJid, key.id);
@@ -95,7 +96,7 @@ const createPoll = async (jid, msg) => {
     },
   });
   currentPoll = {
-    createdBy: jid,
+    createdBy: msg.key.participant,
   };
 };
 
@@ -110,45 +111,38 @@ const sendMessage = async (jid, message, ...args) => {
 
 // Function to handle poll results
 const handlePoll = async (msg) => {
-  /* const group = await socket.groupMetadata(
-    msg.key.remoteJid
-  );
-  const members = group.participants.map((member) => member.id); */
+  if (currentPoll.createdBy === msg.from)
+    return console.log("Can't vote on your own poll!");
 
-  const registered = db.find((user) => user.jid === msg.from);
-  if (registered) {
-    if (msg.body === "Sim 🔥") {
-      currentPoll.options.y.push(msg.from);
-      currentPoll.options.n = currentPoll.options.n.filter(
-        (voter) => voter !== msg.from
-      );
-    } else if (msg.body === "Não 🐔") {
-      currentPoll.options.n.push(msg.from);
-      currentPoll.options.y = currentPoll.options.y.filter(
-        (voter) => voter !== msg.from
-      );
-    }
+  const registered = db.find((user) => user.id === msg.from);
+  if (!registered) return console.log("User not registered!");
+
+  if (msg.answer === "Sim 🔥") {
+    currentPoll.options.y.push(msg.from);
+    currentPoll.options.n = currentPoll.options.n.filter(
+      (voter) => voter !== msg.from
+    );
+  } else if (msg.answer === "Não 🐔") {
+    currentPoll.options.n.push(msg.from);
+    currentPoll.options.y = currentPoll.options.y.filter(
+      (voter) => voter !== msg.from
+    );
   }
 
-  console.log(currentPoll);
-
-  // count the votes
   const yVotes = currentPoll.options.y.length;
   const nVotes = currentPoll.options.n.length;
-  if (yVotes + nVotes === db.length - 1 && currentPoll.createdBy !== msg.from) {
-    const pollCreator = db.find((user) => user.jid === currentPoll.createdBy);
+  if (yVotes + nVotes === db.length - 1) {
+    const pollCreator = db.find((user) => user.id === currentPoll.createdBy);
     if (yVotes > nVotes) {
       pollCreator.score += 1;
       writeFileSync(process.cwd() + "/data.json", JSON.stringify(db));
-      await sendMessage(
-        msg.key.remoteJid,
-        { text: `⚡ O de hoje do(a) ${pollCreator.userName} ta pago ⚡` }
-      );
+      await sendMessage(msg.key.remoteJid, {
+        text: `⚡ O de hoje do(a) ${pollCreator.userName} ta pago ⚡`,
+      });
     } else {
-      await sendMessage(
-        msg.key.remoteJid,
-        { text: `🛑 ${pollCreator.userName} sua imagem não foi aprovada 🛑 ` }
-      );
+      await sendMessage(msg.key.remoteJid, {
+        text: `🛑 ${pollCreator.userName} sua imagem não foi aprovada 🛑 `,
+      });
     }
     currentPoll = null;
   }
@@ -180,6 +174,7 @@ const handleReply = async (msg) => {
   }
 };
 
+// Listen to events
 socket.ev.process(async (events) => {
   if (events["creds.update"]) {
     auth.saveCreds();
@@ -191,17 +186,17 @@ socket.ev.process(async (events) => {
     if (connection === "open") {
       console.log("Connected to WhatsApp ✅");
     } else if (connection === "close") {
-      console.log("Reconnecting to WhatsApp... ⏳");
+      console.log("Disconnected from WhatsApp ❌");
     }
   }
 
+  // Listening to new messages
   if (events["messages.upsert"]) {
     const upsert = events["messages.upsert"];
     const { messages } = upsert;
     if (!messages[0].message) return;
 
     handleReply(messages[0]);
-    console.log(messages[0]);
 
     if (messages[0].message.pollCreationMessage && messages[0].key.fromMe) {
       currentPoll = { ...currentPoll, ...messages[0] };
@@ -213,28 +208,28 @@ socket.ev.process(async (events) => {
     }
   }
 
+  // Listening to poll updates
   if (events["messages.update"]) {
-    for (const { key, update } of events["messages.update"]) {
-      if (update.pollUpdates) {
-        const pollCreation = await getMessage(key);
-        if (pollCreation) {
-          const pollMessage = await getAggregateVotesInPollMessage({
-            message: pollCreation,
-            pollUpdates: update.pollUpdates,
-          });
-          const [messageCtx] = events["messages.update"];
+    const { key, update } = events["messages.update"][0];
 
-          let payload = {
-            ...messageCtx,
-            body:
-              pollMessage.find((poll) => poll.voters.length > 0)?.name || "",
-            from: key.remoteJid,
-            voters: pollCreation,
-            type: "poll",
-          };
+    if (update.pollUpdates) {
+      const pollCreation = await getMessage(key);
+      if (pollCreation) {
+        const pollMessage = await getAggregateVotesInPollMessage({
+          message: pollCreation,
+          pollUpdates: update.pollUpdates,
+        });
+        const [messageCtx] = events["messages.update"];
 
-          handlePoll(payload);
-        }
+        let payload = {
+          ...messageCtx,
+          answer: pollMessage.find((poll) => poll.voters.length > 0)?.name || "",
+          from: events["messages.update"][0].update.pollUpdates[0].pollUpdateMessageKey.participant,
+          voters: pollCreation,
+          type: "poll",
+        };
+
+        if (currentPoll) handlePoll(payload);
       }
     }
   }
