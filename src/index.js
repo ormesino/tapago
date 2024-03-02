@@ -22,6 +22,7 @@ async function WhatsAppBot() {
     auth: auth.state,
     logger: pino({ level: "silent" }),
     printQRInTerminal: true,
+    qrTimeout: 60000,
     browser: ["TaPago", "", ""],
     getMessage,
   });
