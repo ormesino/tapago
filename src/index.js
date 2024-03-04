@@ -5,7 +5,7 @@ import {
   makeWASocket,
   useMultiFileAuthState,
 } from "@whiskeysockets/baileys";
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, unlink, writeFileSync } from "fs";
 import pino from "pino";
 
 // Load the database
@@ -31,6 +31,7 @@ async function WhatsAppBot() {
 
   store.readFromFile(process.cwd() + "/baileys_store.json");
   setInterval(() => {
+    unlink(process.cwd() + "/baileys_store.json");
     store.writeToFile(process.cwd() + "/baileys_store.json");
   }, 10_000);
 
